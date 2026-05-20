@@ -1,0 +1,84 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: tst_postgres
+    environment:
+      POSTGRES_USER: tst_user
+      POSTGRES_PASSWORD: tst_pass
+      POSTGRES_DB: tst_hotels
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tst_user -d tst_hotels"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: tst_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  api:
+    build: ./backend
+    container_name: tst_api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://tst_user:tst_pass@postgres:5432/tst_hotels
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: tst_super_secret_jwt_2026
+      JWT_REFRESH_SECRET: tst_refresh_secret_jwt_2026
+      PORT: 3001
+      NODE_ENV: development
+      STRIPE_SECRET_KEY: sk_test_placeholder
+      MPESA_CONSUMER_KEY: placeholder
+      MPESA_CONSUMER_SECRET: placeholder
+      SENDGRID_API_KEY: SG.placeholder
+      FRONTEND_URL: http://localhost:3000
+      ADMIN_URL: http://localhost:3002
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+
+  website:
+    build: ./website
+    container_name: tst_website
+    depends_on:
+      - api
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./website:/app
+      - /app/node_modules
+
+  admin:
+    build: ./admin
+    container_name: tst_admin
+    depends_on:
+      - api
+    environment:
+      VITE_API_URL: http://localhost:3001/v1
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./admin:/app
+      - /app/node_modules
+
+volumes:
+  postgres_data:
+  redis_data:

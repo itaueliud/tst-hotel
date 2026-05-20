@@ -1,0 +1,16 @@
+{
+  "name": "tst-hotels-platform",
+  "version": "1.0.0",
+  "description": "TST Hotels & Lodges Full Platform",
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../website && npm install && cd ../admin && npm install",
+    "dev:api": "cd backend && npm run dev",
+    "dev:web": "cd website && npm run dev",
+    "dev:admin": "cd admin && npm run dev",
+    "db:migrate": "cd backend && npm run db:migrate",
+    "db:seed": "cd backend && npm run db:seed",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  }
+}

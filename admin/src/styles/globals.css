@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; }
+body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+
+.sidebar-link {
+  @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 hover:text-gray-900 transition-colors;
+}
+.sidebar-link.active {
+  @apply bg-blue-50 text-blue-700;
+}
+.btn {
+  @apply px-4 py-2 rounded-lg text-sm font-semibold transition-colors;
+}
+.btn-primary {
+  @apply btn bg-blue-600 hover:bg-blue-700 text-white;
+}
+.btn-outline {
+  @apply btn border border-gray-300 text-gray-700 hover:bg-gray-50;
+}
+.btn-danger {
+  @apply btn bg-red-600 hover:bg-red-700 text-white;
+}
+.card {
+  @apply bg-white rounded-xl border border-gray-100 shadow-sm;
+}
+.input {
+  @apply w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none;
+}
+.badge-available { @apply bg-green-100 text-green-700; }
+.badge-occupied { @apply bg-red-100 text-red-700; }
+.badge-maintenance { @apply bg-amber-100 text-amber-700; }
+.badge-pending { @apply bg-yellow-100 text-yellow-700; }
+.badge-confirmed { @apply bg-blue-100 text-blue-700; }
+.badge-checked_in { @apply bg-green-100 text-green-700; }
+.badge-checked_out { @apply bg-gray-100 text-gray-700; }
+.badge-cancelled { @apply bg-red-100 text-red-700; }
+.badge-paid { @apply bg-green-100 text-green-700; }
+.badge-failed { @apply bg-red-100 text-red-700; }
+.badge-refunded { @apply bg-purple-100 text-purple-700; }
+.badge-vip { @apply bg-yellow-100 text-yellow-700; }
+.badge-regular { @apply bg-blue-100 text-blue-700; }
+.badge-new { @apply bg-gray-100 text-gray-700; }

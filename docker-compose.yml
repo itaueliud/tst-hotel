@@ -1,21 +1,6 @@
 version: '3.9'
 
 services:
-  mongo:
-    image: mongo:7
-    container_name: tst_mongo
-    environment:
-      MONGO_INITDB_DATABASE: tst_hotels
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo_data:/data/db
-    healthcheck:
-      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: tst_redis
@@ -28,12 +13,9 @@ services:
     build: ./backend
     container_name: tst_api
     depends_on:
-      mongo:
-        condition: service_healthy
       redis:
         condition: service_started
     environment:
-      MONGODB_URI: mongodb://mongo:27017/tst_hotels
       REDIS_URL: redis://redis:6379
       JWT_SECRET: tst_super_secret_jwt_2026
       JWT_REFRESH_SECRET: tst_refresh_secret_jwt_2026
@@ -78,5 +60,4 @@ services:
       - /app/node_modules
 
 volumes:
-  mongo_data:
   redis_data:

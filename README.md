@@ -8,22 +8,26 @@ Complete hotel management platform with public booking website and admin dashboa
 tst-hotels/
 ├── backend/          Node.js + Express REST API
 ├── website/          Next.js 14 public booking website
-├── admin/            React + Vite admin dashboard
-└── docker-compose.yml
+└── admin/            React + Vite admin dashboard
 ```
 
-## 🚀 Quick Start (Docker)
+## 🚀 Quick Start (Manual)
 
 ```bash
-# 1. Copy env files
+# 1. Configure the backend env
 cp backend/.env.example backend/.env
+# then set MONGODB_URI in backend/.env to your Atlas connection string
 
-# 2. Start all services
-docker compose up -d
+# 2. Start the backend
+cd backend
+npm install
+npm run db:migrate
+npm run db:seed
+npm run dev
 
-# 3. Run migrations + seed
-docker compose exec api npm run db:migrate
-docker compose exec api npm run db:seed
+# 3. Start the websites in separate terminals
+cd ../website && npm install && npm run dev
+cd ../admin && npm install && npm run dev
 ```
 
 **URLs:**
@@ -46,7 +50,7 @@ docker compose exec api npm run db:seed
 
 ### Prerequisites
 - Node.js 20+
-- MongoDB 7+
+- MongoDB Atlas or another MongoDB 7+ instance
 - Redis 7+
 
 ### Backend
@@ -101,7 +105,7 @@ npm run dev            # → http://localhost:3002
 | Database | MongoDB 7 |
 | Cache | Redis 7 |
 | Payment | Stripe + M-Pesa Daraja API |
-| Deployment | Docker Compose |
+| Deployment | Manual locally, Docker on Render |
 
 ## 🔌 API Endpoints
 
@@ -137,6 +141,12 @@ Base URL: `http://localhost:3001/v1`
 - Rate limiting on auth endpoints
 - Zod schema validation on all inputs
 - HTTPS enforced in production
+
+## 🚀 Production Deployment (Render)
+
+- Use the Dockerfiles in `backend/`, `website/`, and `admin/` for Render services.
+- Point the backend service at the production `MONGODB_URI` and other secrets in Render environment variables.
+- Keep local development manual with the `npm run dev` commands above.
 
 ## 📞 Support
 

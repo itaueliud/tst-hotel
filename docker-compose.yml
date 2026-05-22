@@ -1,19 +1,17 @@
 version: '3.9'
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: tst_postgres
+  mongo:
+    image: mongo:7
+    container_name: tst_mongo
     environment:
-      POSTGRES_USER: tst_user
-      POSTGRES_PASSWORD: tst_pass
-      POSTGRES_DB: tst_hotels
+      MONGO_INITDB_DATABASE: tst_hotels
     ports:
-      - "5432:5432"
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongo_data:/data/db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tst_user -d tst_hotels"]
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -30,12 +28,12 @@ services:
     build: ./backend
     container_name: tst_api
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
       redis:
         condition: service_started
     environment:
-      DATABASE_URL: postgresql://tst_user:tst_pass@postgres:5432/tst_hotels
+      MONGODB_URI: mongodb://mongo:27017/tst_hotels
       REDIS_URL: redis://redis:6379
       JWT_SECRET: tst_super_secret_jwt_2026
       JWT_REFRESH_SECRET: tst_refresh_secret_jwt_2026
@@ -80,5 +78,5 @@ services:
       - /app/node_modules
 
 volumes:
-  postgres_data:
+  mongo_data:
   redis_data:

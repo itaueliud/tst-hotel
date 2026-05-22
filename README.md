@@ -46,7 +46,7 @@ docker compose exec api npm run db:seed
 
 ### Prerequisites
 - Node.js 20+
-- PostgreSQL 15+
+- MongoDB 7+
 - Redis 7+
 
 ### Backend
@@ -98,7 +98,7 @@ npm run dev            # → http://localhost:3002
 | Frontend (Website) | Next.js 14, Tailwind CSS |
 | Frontend (Admin) | React 18, Vite, Recharts |
 | Backend | Node.js 20, Express 4, JWT |
-| Database | PostgreSQL 15 |
+| Database | MongoDB 7 |
 | Cache | Redis 7 |
 | Payment | Stripe + M-Pesa Daraja API |
 | Deployment | Docker Compose |

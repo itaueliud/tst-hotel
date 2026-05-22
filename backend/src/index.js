@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { connectDB } = require('./db');
 
 const authRoutes = require('./routes/auth');
 const roomRoutes = require('./routes/rooms');
@@ -62,8 +63,18 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`TST Hotels API running on http://localhost:${PORT}`);
-});
+async function start() {
+  await connectDB();
+  app.listen(PORT, () => {
+    console.log(`TST Hotels API running on http://localhost:${PORT}`);
+  });
+}
+
+if (require.main === module) {
+  start().catch((error) => {
+    console.error('Failed to start API server:', error);
+    process.exit(1);
+  });
+}
 
 module.exports = app;

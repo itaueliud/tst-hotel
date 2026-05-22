@@ -16,7 +16,7 @@ export default function Footer() {
               </div>
             </div>
             <p className="text-sm text-gray-400 leading-relaxed">
-              Premium hospitality in Nyeri. Experience comfort, elegance, and unforgettable stays.
+              Premium hospitality in Kenya. Experience comfort, elegance, and unforgettable stays.
             </p>
           </div>
           <div>

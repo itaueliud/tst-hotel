@@ -1,18 +1,30 @@
-const { Pool } = require('pg');
+const mongoose = require('mongoose');
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+let connectPromise = null;
 
-pool.on('error', (err) => {
-  console.error('Unexpected PostgreSQL client error:', err);
-});
+async function connectDB(uri = process.env.MONGODB_URI) {
+  if (!uri) {
+    throw new Error('MONGODB_URI is not set');
+  }
+
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
+  }
+
+  if (!connectPromise) {
+    connectPromise = mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 5000,
+      maxPoolSize: 20,
+    }).catch((error) => {
+      connectPromise = null;
+      throw error;
+    });
+  }
+
+  return connectPromise;
+}
 
 module.exports = {
-  query: (text, params) => pool.query(text, params),
-  pool
+  connectDB,
+  mongoose,
 };

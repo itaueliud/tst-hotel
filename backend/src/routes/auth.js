@@ -2,8 +2,8 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { z } = require('zod');
-const db = require('../db');
 const { authenticate } = require('../middleware/auth');
+const User = require('../models/User');
 
 const router = express.Router();
 
@@ -16,11 +16,7 @@ const loginSchema = z.object({
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = loginSchema.parse(req.body);
-    const { rows } = await db.query(
-      'SELECT * FROM users WHERE email = $1',
-      [email.toLowerCase()]
-    );
-    const user = rows[0];
+    const user = await User.findOne({ email: email.toLowerCase() });
     if (!user || !(await bcrypt.compare(password, user.password))) {
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -54,9 +50,8 @@ router.post('/refresh', async (req, res) => {
       refreshToken,
       process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET + '_refresh'
     );
-    const { rows } = await db.query('SELECT * FROM users WHERE id = $1', [decoded.id]);
-    if (!rows[0]) return res.status(401).json({ error: 'User not found' });
-    const user = rows[0];
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(401).json({ error: 'User not found' });
     const accessToken = jwt.sign(
       { id: user.id, email: user.email, role: user.role, name: user.name },
       process.env.JWT_SECRET,
@@ -70,12 +65,9 @@ router.post('/refresh', async (req, res) => {
 
 // GET /auth/me
 router.get('/me', authenticate, async (req, res) => {
-  const { rows } = await db.query(
-    'SELECT id, name, email, role, created_at FROM users WHERE id = $1',
-    [req.user.id]
-  );
-  if (!rows[0]) return res.status(404).json({ error: 'User not found' });
-  res.json(rows[0]);
+  const user = await User.findById(req.user.id).select('name email role created_at');
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  res.json(user);
 });
 
 // POST /auth/logout

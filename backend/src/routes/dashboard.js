@@ -1,45 +1,106 @@
 const express = require('express');
-const db = require('../db');
+const Room = require('../models/Room');
+const Booking = require('../models/Booking');
+const Invoice = require('../models/Invoice');
+const Customer = require('../models/Customer');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 
+const formatBooking = (booking) => {
+  const data = booking.toObject ? booking.toObject() : booking;
+  const customer = data.customer_id && typeof data.customer_id === 'object' ? data.customer_id : null;
+  const room = data.room_id && typeof data.room_id === 'object' ? data.room_id : null;
+
+  return {
+    ...data,
+    customer_name: customer?.full_name || null,
+    room_number: room?.room_number || null,
+    room_type: room?.type || null,
+  };
+};
+
 // GET /dashboard/stats
-router.get('/stats', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.get('/stats', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
     const [rooms, bookings, revenue, customers] = await Promise.all([
-      db.query(`SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status='available' THEN 1 ELSE 0 END) as available,
-        SUM(CASE WHEN status='occupied' THEN 1 ELSE 0 END) as occupied,
-        SUM(CASE WHEN status='maintenance' THEN 1 ELSE 0 END) as maintenance
-        FROM rooms`),
-      db.query(`SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending,
-        SUM(CASE WHEN status='confirmed' THEN 1 ELSE 0 END) as confirmed,
-        SUM(CASE WHEN status='checked_in' THEN 1 ELSE 0 END) as checked_in,
-        SUM(CASE WHEN DATE(created_at) = CURRENT_DATE THEN 1 ELSE 0 END) as today
-        FROM bookings`),
-      db.query(`SELECT
-        COALESCE(SUM(amount), 0) as total,
-        COALESCE(SUM(CASE WHEN payment_status='paid' THEN amount ELSE 0 END), 0) as paid,
-        COALESCE(SUM(CASE WHEN payment_status='pending' THEN amount ELSE 0 END), 0) as pending,
-        COALESCE(SUM(CASE WHEN payment_status='refunded' THEN amount ELSE 0 END), 0) as refunded,
-        COALESCE(SUM(CASE WHEN DATE(paid_at) = CURRENT_DATE AND payment_status='paid' THEN amount ELSE 0 END), 0) as today
-        FROM invoices`),
-      db.query(`SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN tier='vip' THEN 1 ELSE 0 END) as vip,
-        SUM(CASE WHEN tier='regular' THEN 1 ELSE 0 END) as regular,
-        SUM(CASE WHEN tier='new' THEN 1 ELSE 0 END) as new_guests
-        FROM customers WHERE is_active=true`)
+      Room.aggregate([
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            available: { $sum: { $cond: [{ $eq: ['$status', 'available'] }, 1, 0] } },
+            occupied: { $sum: { $cond: [{ $eq: ['$status', 'occupied'] }, 1, 0] } },
+            maintenance: { $sum: { $cond: [{ $eq: ['$status', 'maintenance'] }, 1, 0] } },
+          }
+        }
+      ]),
+      Booking.aggregate([
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] } },
+            confirmed: { $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] } },
+            checked_in: { $sum: { $cond: [{ $eq: ['$status', 'checked_in'] }, 1, 0] } },
+            today: {
+              $sum: {
+                $cond: [
+                  { $gte: ['$created_at', new Date(new Date().setHours(0, 0, 0, 0))] },
+                  1,
+                  0,
+                ]
+              }
+            },
+          }
+        }
+      ]),
+      Invoice.aggregate([
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amount' },
+            paid: { $sum: { $cond: [{ $eq: ['$payment_status', 'paid'] }, '$amount', 0] } },
+            pending: { $sum: { $cond: [{ $eq: ['$payment_status', 'pending'] }, '$amount', 0] } },
+            refunded: { $sum: { $cond: [{ $eq: ['$payment_status', 'refunded'] }, '$amount', 0] } },
+            today: {
+              $sum: {
+                $cond: [
+                  {
+                    $and: [
+                      { $eq: ['$payment_status', 'paid'] },
+                      { $gte: ['$paid_at', new Date(new Date().setHours(0, 0, 0, 0))] },
+                    ]
+                  },
+                  '$amount',
+                  0,
+                ]
+              }
+            },
+          }
+        }
+      ]),
+      Customer.aggregate([
+        {
+          $match: { is_active: true }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            vip: { $sum: { $cond: [{ $eq: ['$tier', 'vip'] }, 1, 0] } },
+            regular: { $sum: { $cond: [{ $eq: ['$tier', 'regular'] }, 1, 0] } },
+            new_guests: { $sum: { $cond: [{ $eq: ['$tier', 'new'] }, 1, 0] } },
+          }
+        }
+      ])
     ]);
+
     res.json({
-      rooms: rooms.rows[0],
-      bookings: bookings.rows[0],
-      revenue: revenue.rows[0],
-      customers: customers.rows[0]
+      rooms: rooms[0] || { total: 0, available: 0, occupied: 0, maintenance: 0 },
+      bookings: bookings[0] || { total: 0, pending: 0, confirmed: 0, checked_in: 0, today: 0 },
+      revenue: revenue[0] || { total: 0, paid: 0, pending: 0, refunded: 0, today: 0 },
+      customers: customers[0] || { total: 0, vip: 0, regular: 0, new_guests: 0 },
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch stats' });
@@ -47,35 +108,44 @@ router.get('/stats', authenticate, requireRole('admin','manager','staff'), async
 });
 
 // GET /dashboard/recent-bookings
-router.get('/recent-bookings', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.get('/recent-bookings', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT b.id, b.check_in, b.check_out, b.status, b.total_amount, b.created_at,
-             c.full_name as customer_name, r.room_number, r.type as room_type
-      FROM bookings b
-      LEFT JOIN customers c ON b.customer_id = c.id
-      LEFT JOIN rooms r ON b.room_id = r.id
-      ORDER BY b.created_at DESC LIMIT 10
-    `);
-    res.json(rows);
+    const bookings = await Booking.find()
+      .sort({ created_at: -1 })
+      .limit(10)
+      .populate('customer_id', 'full_name')
+      .populate('room_id', 'room_number type');
+
+    res.json(bookings.map(formatBooking));
   } catch {
     res.status(500).json({ error: 'Failed to fetch recent bookings' });
   }
 });
 
 // GET /dashboard/weekly-revenue
-router.get('/weekly-revenue', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.get('/weekly-revenue', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
-    const { rows } = await db.query(`
-      SELECT DATE(paid_at) as date,
-             COALESCE(SUM(amount), 0) as revenue,
-             COUNT(*) as transactions
-      FROM invoices
-      WHERE payment_status = 'paid'
-        AND paid_at >= NOW() - INTERVAL '7 days'
-      GROUP BY DATE(paid_at)
-      ORDER BY date
-    `);
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const rows = await Invoice.aggregate([
+      {
+        $match: {
+          payment_status: 'paid',
+          paid_at: { $gte: weekAgo }
+        }
+      },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$paid_at' } },
+          revenue: { $sum: '$amount' },
+          transactions: { $sum: 1 }
+        }
+      },
+      { $sort: { _id: 1 } },
+      { $project: { date: '$_id', revenue: 1, transactions: 1, _id: 0 } }
+    ]);
+
     res.json(rows);
   } catch {
     res.status(500).json({ error: 'Failed to fetch weekly revenue' });

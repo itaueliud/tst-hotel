@@ -1,29 +1,43 @@
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { pool } = require('./index');
+const { connectDB, mongoose } = require('./index');
+const User = require('../models/User');
+const Room = require('../models/Room');
+const Customer = require('../models/Customer');
 
 async function seed() {
-  const client = await pool.connect();
+  await connectDB();
   try {
-    console.log('Seeding database...');
+    console.log('Seeding MongoDB...');
 
-    // Admin user
-    const hash = await bcrypt.hash('TST@Admin2026', 12);
-    await client.query(`
-      INSERT INTO users (name, email, password, role)
-      VALUES ('Super Administrator', 'admin@tsthotels.com', $1, 'admin')
-      ON CONFLICT (email) DO NOTHING
-    `, [hash]);
+    const adminHash = await bcrypt.hash('TST@Admin2026', 12);
+    await User.updateOne(
+      { email: 'admin@tsthotels.com' },
+      {
+        $setOnInsert: {
+          name: 'Super Administrator',
+          email: 'admin@tsthotels.com',
+          password: adminHash,
+          role: 'admin',
+        }
+      },
+      { upsert: true }
+    );
 
-    // Staff user
     const staffHash = await bcrypt.hash('Staff@2026', 12);
-    await client.query(`
-      INSERT INTO users (name, email, password, role)
-      VALUES ('Front Desk Staff', 'staff@tsthotels.com', $1, 'staff')
-      ON CONFLICT (email) DO NOTHING
-    `, [staffHash]);
+    await User.updateOne(
+      { email: 'staff@tsthotels.com' },
+      {
+        $setOnInsert: {
+          name: 'Front Desk Staff',
+          email: 'staff@tsthotels.com',
+          password: staffHash,
+          role: 'staff',
+        }
+      },
+      { upsert: true }
+    );
 
-    // Rooms
     const rooms = [
       { number: '101', floor: 1, type: 'standard', price: 4500, capacity: 2, desc: 'Comfortable standard room with garden view' },
       { number: '102', floor: 1, type: 'standard', price: 4500, capacity: 2, desc: 'Comfortable standard room with garden view' },
@@ -37,41 +51,57 @@ async function seed() {
       { number: '402', floor: 4, type: 'executive', price: 22000, capacity: 3, desc: 'Executive suite with premium amenities' },
     ];
 
-    for (const r of rooms) {
-      await client.query(`
-        INSERT INTO rooms (room_number, floor, type, status, price_night, capacity, description, amenities)
-        VALUES ($1, $2, $3, 'available', $4, $5, $6, $7)
-        ON CONFLICT (room_number) DO NOTHING
-      `, [
-        r.number, r.floor, r.type, r.price, r.capacity, r.desc,
-        JSON.stringify({ wifi: true, ac: true, tv: true, minibar: r.type !== 'standard', safe: true })
-      ]);
+    for (const room of rooms) {
+      await Room.updateOne(
+        { room_number: room.number },
+        {
+          $setOnInsert: {
+            room_number: room.number,
+            floor: room.floor,
+            type: room.type,
+            status: 'available',
+            price_night: room.price,
+            capacity: room.capacity,
+            description: room.desc,
+            amenities: { wifi: true, ac: true, tv: true, minibar: room.type !== 'standard', safe: true },
+          }
+        },
+        { upsert: true }
+      );
     }
 
-    // Sample customers
     const customers = [
       { name: 'James Mwangi', email: 'james.mwangi@email.com', phone: '+254712345678', id_number: 'KE12345678', nationality: 'Kenyan', tier: 'vip', total_stays: 12 },
       { name: 'Amina Hassan', email: 'amina.hassan@email.com', phone: '+254723456789', id_number: 'KE23456789', nationality: 'Kenyan', tier: 'regular', total_stays: 4 },
       { name: 'David Ochieng', email: 'david.ochieng@email.com', phone: '+254734567890', id_number: 'KE34567890', nationality: 'Kenyan', tier: 'new', total_stays: 1 },
     ];
 
-    for (const c of customers) {
-      await client.query(`
-        INSERT INTO customers (full_name, email, phone, id_number, nationality, tier, total_stays)
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
-        ON CONFLICT DO NOTHING
-      `, [c.name, c.email, c.phone, c.id_number, c.nationality, c.tier, c.total_stays]);
+    for (const customer of customers) {
+      await Customer.updateOne(
+        { email: customer.email },
+        {
+          $setOnInsert: {
+            full_name: customer.name,
+            email: customer.email,
+            phone: customer.phone,
+            id_number: customer.id_number,
+            nationality: customer.nationality,
+            tier: customer.tier,
+            total_stays: customer.total_stays,
+          }
+        },
+        { upsert: true }
+      );
     }
 
-    console.log('✅ Database seeded successfully');
+    console.log('✅ MongoDB seeded successfully');
     console.log('   Admin: admin@tsthotels.com / TST@Admin2026');
     console.log('   Staff: staff@tsthotels.com / Staff@2026');
   } catch (err) {
     console.error('❌ Seed failed:', err.message);
     throw err;
   } finally {
-    client.release();
-    await pool.end();
+    await mongoose.connection.close();
   }
 }
 

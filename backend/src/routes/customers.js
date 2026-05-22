@@ -1,6 +1,7 @@
 const express = require('express');
 const { z } = require('zod');
-const db = require('../db');
+const Customer = require('../models/Customer');
+const Booking = require('../models/Booking');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -14,75 +15,127 @@ const customerSchema = z.object({
   notes: z.string().optional()
 });
 
+const formatBooking = (booking) => {
+  const data = booking.toObject ? booking.toObject() : booking;
+  const room = data.room_id && typeof data.room_id === 'object' ? data.room_id : null;
+  return {
+    ...data,
+    room_id: room ? room.id : data.room_id,
+    room_number: room?.room_number || null,
+    room_type: room?.type || null,
+  };
+};
+
 // GET /customers
-router.get('/', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.get('/', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
     const { search, tier } = req.query;
-    let query = `
-      SELECT c.*, COUNT(b.id) as booking_count,
-             MAX(b.check_out) as last_stay
-      FROM customers c
-      LEFT JOIN bookings b ON c.id = b.customer_id AND b.status = 'checked_out'
-      WHERE c.is_active = true
-    `;
-    const params = [];
-    if (tier) { params.push(tier); query += ` AND c.tier = $${params.length}`; }
-    if (search) {
-      params.push(`%${search}%`);
-      query += ` AND (c.full_name ILIKE $${params.length} OR c.email ILIKE $${params.length} OR c.phone ILIKE $${params.length})`;
+    const match = { is_active: true };
+    if (tier) {
+      match.tier = tier;
     }
-    query += ' GROUP BY c.id ORDER BY c.created_at DESC';
-    const { rows } = await db.query(query, params);
-    res.json(rows);
+    if (search) {
+      const regex = new RegExp(search, 'i');
+      match.$or = [
+        { full_name: regex },
+        { email: regex },
+        { phone: regex },
+      ];
+    }
+
+    const customers = await Customer.aggregate([
+      { $match: match },
+      {
+        $lookup: {
+          from: 'bookings',
+          let: { customerId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$customer_id', '$$customerId'] },
+                    { $eq: ['$status', 'checked_out'] }
+                  ]
+                }
+              }
+            },
+            { $sort: { created_at: -1 } }
+          ],
+          as: 'booking_history'
+        }
+      },
+      {
+        $addFields: {
+          booking_count: { $size: '$booking_history' },
+          last_stay: { $max: '$booking_history.check_out' }
+        }
+      },
+      { $sort: { created_at: -1 } },
+      { $project: { booking_history: 0 } }
+    ]);
+
+    res.json(customers);
   } catch {
     res.status(500).json({ error: 'Failed to fetch customers' });
   }
 });
 
 // GET /customers/:id
-router.get('/:id', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.get('/:id', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
-    const { rows: customers } = await db.query('SELECT * FROM customers WHERE id=$1', [req.params.id]);
-    if (!customers[0]) return res.status(404).json({ error: 'Customer not found' });
-    const { rows: bookings } = await db.query(`
-      SELECT b.*, r.room_number, r.type as room_type
-      FROM bookings b JOIN rooms r ON b.room_id = r.id
-      WHERE b.customer_id = $1 ORDER BY b.created_at DESC
-    `, [req.params.id]);
-    res.json({ ...customers[0], bookings });
+    const customer = await Customer.findById(req.params.id);
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+
+    const bookings = await Booking.find({ customer_id: req.params.id })
+      .sort({ created_at: -1 })
+      .populate('room_id', 'room_number type');
+
+    res.json({
+      ...customer.toJSON(),
+      bookings: bookings.map(formatBooking),
+    });
   } catch {
     res.status(500).json({ error: 'Failed to fetch customer' });
   }
 });
 
 // POST /customers
-router.post('/', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.post('/', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
     const data = customerSchema.parse(req.body);
-    const { rows } = await db.query(`
-      INSERT INTO customers (full_name, email, phone, id_number, nationality, notes)
-      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *
-    `, [data.full_name, data.email, data.phone, data.id_number, data.nationality, data.notes]);
-    res.status(201).json(rows[0]);
+    const customer = await Customer.create({
+      full_name: data.full_name,
+      email: data.email?.toLowerCase(),
+      phone: data.phone,
+      id_number: data.id_number,
+      nationality: data.nationality,
+      notes: data.notes,
+    });
+    res.status(201).json(customer);
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
+    if (err.code === 11000) return res.status(409).json({ error: 'Customer already exists' });
     res.status(500).json({ error: 'Failed to create customer' });
   }
 });
 
 // PUT /customers/:id
-router.put('/:id', authenticate, requireRole('admin','manager','staff'), async (req, res) => {
+router.put('/:id', authenticate, requireRole('admin', 'manager', 'staff'), async (req, res) => {
   try {
     const data = customerSchema.partial().parse(req.body);
-    const fields = Object.keys(data).map((k, i) => `${k} = $${i + 1}`);
-    if (!fields.length) return res.status(400).json({ error: 'No fields to update' });
-    const params = [...Object.values(data), req.params.id];
-    const { rows } = await db.query(
-      `UPDATE customers SET ${fields.join(', ')} WHERE id = $${params.length} RETURNING *`,
-      params
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Customer not found' });
-    res.json(rows[0]);
+    if (data.email) {
+      data.email = data.email.toLowerCase();
+    }
+    if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+
+    const customer = await Customer.findByIdAndUpdate(req.params.id, data, {
+      new: true,
+      runValidators: true,
+    });
+
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
+    res.json(customer);
   } catch (err) {
     if (err instanceof z.ZodError) return res.status(400).json({ error: err.errors });
     res.status(500).json({ error: 'Failed to update customer' });
@@ -92,11 +145,12 @@ router.put('/:id', authenticate, requireRole('admin','manager','staff'), async (
 // DELETE /customers/:id (soft delete) - admin only
 router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `UPDATE customers SET is_active = false WHERE id=$1 RETURNING id`,
-      [req.params.id]
+    const customer = await Customer.findByIdAndUpdate(
+      req.params.id,
+      { is_active: false },
+      { new: true }
     );
-    if (!rows[0]) return res.status(404).json({ error: 'Customer not found' });
+    if (!customer) return res.status(404).json({ error: 'Customer not found' });
     res.json({ message: 'Customer deactivated' });
   } catch {
     res.status(500).json({ error: 'Failed to deactivate customer' });
